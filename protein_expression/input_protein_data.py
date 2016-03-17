@@ -12,7 +12,6 @@ import numpy as np
 SOURCE_URL = 'https://archive.ics.uci.edu/ml/machine-learning-databases/00342/'
 FILE_NAME = 'Data_Cortex_Nuclear.xls'
 def maybe_download(work_directory):
-  """Download the data from Yann's website, unless it's already here."""
   if not os.path.exists(work_directory):
     os.mkdir(work_directory)
   filepath = os.path.join(work_directory, FILE_NAME)

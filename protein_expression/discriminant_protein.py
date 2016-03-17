@@ -62,6 +62,14 @@ for i in range(0, weights.shape[1]-1):
     difference = np.abs((class_profile_1-class_profile_2)/(class_profile_1+class_profile_2))
     # Results
     print("For classes : " + protein_expr.label_name[i] +" and " + protein_expr.label_name[j])
+    print(protein_expr.label_name[i] + " +ve Discriminatory Proteins are : ",
+          map(lambda x: protein_expr.feature_name[x], np.argpartition(class_profile_1, -3)[-10:]))
+    print(protein_expr.label_name[j] + " +ve Discriminatory Proteins are : ",
+          map(lambda x: protein_expr.feature_name[x], np.argpartition(class_profile_2, -3)[-10:]))
+    print(protein_expr.label_name[i] + " -ve Discriminatory Proteins are : ",
+          map(lambda x: protein_expr.feature_name[x], np.argpartition(class_profile_1, -3)[0:10]))
+    print(protein_expr.label_name[j] + " -ve Discriminatory Proteins are : ",
+          map(lambda x: protein_expr.feature_name[x], np.argpartition(class_profile_2, -3)[0:10]))
     print("Discriminator Proteins are : ", map(lambda x: protein_expr.feature_name[x], np.argpartition(difference, -3)[-3:]))
 
 
