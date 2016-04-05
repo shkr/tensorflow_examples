@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+import numpy as np
 
 # Basic model parameters as external flags.
 flags = tf.app.flags
@@ -75,16 +76,17 @@ def training(input_data, perplexity=20.0):
     H = entropy_matrix(tf.get_default_graph(), P)
     logU = tf.tile(tf.constant(np.log(perplexity), dtype=tf.float32, shape = [1]), multiples=[shape[0]])
     loss = tf.nn.l2_loss(H - logU, name='L2_Loss')
-    optimizer = tf.train.AdagradOptimizer(learning_rate=1.0)
+    optimizer = tf.train.AdagradOptimizer(learning_rate=0.3)
     train_ops = optimizer.minimize(loss)
     sess = tf.Session()
     sess.run(tf.initialize_all_variables())
-    loss_values = []
     beta_values = []
+    loss_values = []
     start_time = time.time()
-    for i in range(500):
-        _, beta_value, H_value, loss_value = sess.run([train_ops, beta, H, loss], feed_dict={X: input_data})
-
+    for i in range(100):
+        _, loss_value, beta_value = sess.run([train_ops, loss, beta], feed_dict={X: input_data})
+        beta_values.append(np.sum(beta_value)/len(beta_value))
+        loss_values.append(loss_value)
         # Write the summaries and print an overview fairly often.
         if i % 25 == 0:
             # Print status to stdout.
@@ -97,10 +99,25 @@ def training(input_data, perplexity=20.0):
             print('Beta Value')
             print(beta_value)
             print('')
-            print('H-Value')
-            print(H_value)
-            print('')
 
+    # Expected Mean value of sigma:  2.38659662134 from original code
+    fig, ax1 = plt.subplots()
+    x = range(0, len(beta_values))
+    ax1.plot(x, beta_values, 'r')
+    ax1.axhline(y=2.38659662134, linewidth=2, color='g')
+    ax1.axhline(y=beta_values[-1], linewidth=2, color='b')
+    ax1.set_xlabel('#Epochs')
+    # Make the y-axis label and tick labels match the line color.
+    ax1.set_ylabel('mean-beta', color='r')
+    for tl in ax1.get_yticklabels():
+        tl.set_color('r')
+
+    ax2 = ax1.twinx()
+    ax2.plot(x, loss_values, 'k', marker='*')
+    ax2.set_ylabel('L2-Loss', color='k')
+    for tl in ax2.get_yticklabels():
+        tl.set_color('k')
+    plt.show()
 
 if __name__ == "__main__":
 
