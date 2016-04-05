@@ -69,24 +69,35 @@ def entropy_matrix(graph, P):
 
 def training(input_data, perplexity=20.0):
     shape = input_data.shape
+
     X = tf.placeholder(dtype=tf.float32, shape=[shape[0], shape[1]])
-    beta = tf.Variable(initial_value=tf.ones(shape=[shape[0]], dtype=tf.float32))
+    beta = tf.Variable(initial_value=tf.ones(shape=[shape[0]], dtype=tf.float32), name="beta")
     D = distance_matrix(tf.get_default_graph(), X)
     P = probability_matrix(tf.get_default_graph(), beta, D)
     H = entropy_matrix(tf.get_default_graph(), P)
     logU = tf.tile(tf.constant(np.log(perplexity), dtype=tf.float32, shape = [1]), multiples=[shape[0]])
-    loss = tf.nn.l2_loss(H - logU, name='L2_Loss')
+    loss = tf.nn.l2_loss(H - logU, name='l2_Loss')
+
+    beta_hist = tf.histogram_summary("beta", beta)
+    loss_summary = tf.scalar_summary("l2_loss", loss)
+    merged_summary = tf.merge_all_summaries()
+
+
     optimizer = tf.train.AdagradOptimizer(learning_rate=0.3)
     train_ops = optimizer.minimize(loss)
+
     sess = tf.Session()
     sess.run(tf.initialize_all_variables())
+    summary_writer = tf.train.SummaryWriter("log/", sess.graph_def)
     beta_values = []
     loss_values = []
     start_time = time.time()
+
     for i in range(100):
-        _, loss_value, beta_value = sess.run([train_ops, loss, beta], feed_dict={X: input_data})
+        _, summary_str, loss_value, beta_value = sess.run([train_ops, merged_summary, loss, beta], feed_dict={X: input_data})
         beta_values.append(np.sum(beta_value)/len(beta_value))
         loss_values.append(loss_value)
+        summary_writer.add_summary(summary_str, i)
         # Write the summaries and print an overview fairly often.
         if i % 25 == 0:
             # Print status to stdout.
@@ -100,6 +111,8 @@ def training(input_data, perplexity=20.0):
             print(beta_value)
             print('')
 
+    #Close Summary Writer
+    summary_writer.close()
     # Expected Mean value of sigma:  2.38659662134 from original code
     fig, ax1 = plt.subplots()
     x = range(0, len(beta_values))
