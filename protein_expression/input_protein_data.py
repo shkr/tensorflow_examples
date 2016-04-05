@@ -6,7 +6,7 @@ import os
 import xlrd
 import tensorflow.python.platform
 import numpy
-from six.moves import urllib
+from urllib import request
 import tensorflow as tf
 import numpy as np
 SOURCE_URL = 'https://archive.ics.uci.edu/ml/machine-learning-databases/00342/'
@@ -16,7 +16,7 @@ def maybe_download(work_directory):
     os.mkdir(work_directory)
   filepath = os.path.join(work_directory, FILE_NAME)
   if not os.path.exists(filepath):
-    filepath, _ = urllib.request.urlretrieve(SOURCE_URL + FILE_NAME, filepath)
+    filepath, _ = request.urlretrieve(SOURCE_URL + FILE_NAME, filepath)
     statinfo = os.stat(filepath)
     print('Successfully downloaded', FILE_NAME, statinfo.st_size, 'bytes.')
   return filepath
@@ -103,7 +103,7 @@ def extract_labels(filename):
   indexes = []
   for rx in range(1, sh.nrows):
       label = sh.row(rx)[81].value
-      if(mapping.has_key(label)):
+      if(label in mapping):
         index = mapping[label]
       else :
         counter += 1
@@ -114,15 +114,19 @@ def extract_labels(filename):
   labels = dense_to_one_hot(np.array(indexes), counter+1)
   return labels, {v: k for k, v in mapping.items()}
 
+
 def extract_expression_profile(filename):
   """Extract the images into a 77D float numpy array [index, y, x, depth]."""
   print('Extracting', filename)
   book = xlrd.open_workbook(filename)
   sh = book.sheet_by_index(0)
-  feature_name = map(lambda x: x.value, sh.row(0)[1: 78])
-  expression_profile = np.array([ np.array(map(lambda x: 0.0 if(isinstance(x.value, str)) else x.value, sh.row(rx)[1: 78])) for rx in range(1, sh.nrows) ])
+  feature_name = [x.value for x in sh.row(0)[1: 78]]
+  expression_profile = np.zeros(shape=[sh.nrows - 1, 77])
+  for rx in range(0, sh.nrows-1):
+      expression_profile[rx] = np.array([0.0 if(isinstance(x.value, str)) else x.value for x in sh.row(rx)[1: 78]], dtype=np.float32)
 
   return expression_profile, feature_name
+
 
 def read_data_sets(train_dir, one_hot=False):
   local_file = maybe_download(train_dir)
