@@ -33,7 +33,8 @@ y_ = tf.placeholder(tf.float32, [None, no_of_classes])
 cross_entropy = -tf.reduce_sum(y_*tf.log(y))
 
 # Using a Gradient Descent Optimizer with step size 0.01 and minimizing cross_entropy
-train_op = tf.train.GradientDescentOptimizer(0.0001).minimize(cross_entropy)
+optimizer = tf.train.GradientDescentOptimizer(1e-10)
+train_op = optimizer.minimize(cross_entropy)
 
 # Task to initialize all model variables
 init = tf.initialize_all_variables()
@@ -84,6 +85,3 @@ for i in range(0, weights.shape[1]-1):
     print(protein_expr.label_name[j] + " -ve Discriminatory Proteins are : ",
           [protein_expr.feature_name[x] for x in np.argpartition(class_profile_2, -3)[0:10]])
     print("Discriminator Proteins are : ", [protein_expr.feature_name[x] for x in  np.argpartition(difference, -3)[-3:]])
-
-
-
