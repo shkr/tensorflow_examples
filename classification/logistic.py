@@ -42,7 +42,7 @@ def main(argv=None):
     test_labels_one_hot = (np.arange(num_classes) == test_labels[:, None]).astype(np.float32)
 
     x = tf.placeholder(dtype=tf.float32, shape=[None, num_features])
-    y_placeholder = tf.placeholder(dtype=tf.float32, shape=[None, num_features])
+    y_placeholder = tf.placeholder(dtype=tf.float32, shape=[None, num_classes])
 
     # Matrix Operation
     W = tf.Variable(tf.zeros(shape=[num_features, num_classes]))
