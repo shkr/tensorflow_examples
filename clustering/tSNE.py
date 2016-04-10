@@ -30,15 +30,14 @@ def distance_matrix(graph, X):
         shape = X.get_shape().as_list()
         Di = tf.reduce_sum(tf.mul(X, X), 1)
         I_magnitude_tiled = tf.tile(tf.expand_dims(Di, 1), multiples=[1, shape[0]])
-        I_t_magnitude_tiled = tf.tile(tf.reshape(Di, shape=[1, shape[0]]), multiples=[shape[0], 1])
+        I_t_magnitude_tiled = tf.tile(tf.expand_dims(Di, 0), multiples=[shape[0], 1])
         I_I = tf.matmul(X, tf.transpose(X))
-        D = tf.sub(
+        D = tf.add(
             tf.add(I_magnitude_tiled, I_t_magnitude_tiled),
-            tf.scalar_mul(2.0, I_I)
+            tf.scalar_mul(-2.0, I_I)
         )
-        zeros = tf.zeros(shape=[shape[0], shape[0]], dtype=tf.float32)
-
-    return tf.maximum(D, zeros)
+        zero_diagonal = tf.exp(tf.diag(diagonal=[-np.inf for _ in range(shape[0])]))
+    return tf.mul(D, zero_diagonal)
 
 
 def probability_matrix(graph, beta, D):
@@ -104,7 +103,7 @@ def kl_divergence(graph, P, Q):
         one_diagonal = tf.diag(diagonal=[1.0 for _ in range(shape[0])])
         P_mod = tf.add(P, one_diagonal)
         Q_mod = tf.add(Q, one_diagonal)
-        return tf.reduce_sum(tf.mul(P, tf.log(tf.div(P_mod, Q_mod))), reduction_indices=[0, 1])
+        return tf.reduce_sum(tf.mul(P, tf.log(tf.div(P_mod, Q_mod))), reduction_indices=[0, 1], name="kl_divergence")
 
 
 def training(input_data, perplexity, output_dimensions):
@@ -116,10 +115,10 @@ def training(input_data, perplexity, output_dimensions):
     :return:
     """
     shape = input_data.shape
-
+    print("X shape = ({}, {})".format(shape[0], shape[1]))
     # Input Data
     X = tf.placeholder(dtype=tf.float32, shape=[shape[0], shape[1]])
-    beta = tf.Variable(initial_value=tf.ones(shape=[shape[0]], dtype=tf.float32), name="beta")
+    beta = tf.Variable(initial_value=tf.constant(value=2.0, shape=[shape[0]], dtype=tf.float32), name="beta")
     D = distance_matrix(tf.get_default_graph(), X)
     P = probability_matrix(tf.get_default_graph(), beta, D)
     H = entropy_matrix(tf.get_default_graph(), P)
@@ -127,23 +126,25 @@ def training(input_data, perplexity, output_dimensions):
     # The perplexity of the distribution approximated around each input vector
     # must approach the logU value
     logU = tf.tile(tf.constant(np.log(perplexity), dtype=tf.float32, shape = [1]), multiples=[shape[0]])
-    entropy_loss = tf.nn.l2_loss(H - logU, name='l2_Loss')
-    entropy_optimizer = tf.train.AdagradOptimizer(learning_rate=0.5)
-    entropy_train_ops = entropy_optimizer.minimize(entropy_loss)
+    entropy_difference = tf.nn.l2_loss(H - logU, name='l2_Loss')
+    entropy_optimizer = tf.train.AdagradOptimizer(learning_rate=0.20)
+    entropy_train_ops = entropy_optimizer.minimize(entropy_difference)
 
     # Embedding
-    Y = tf.Variable(initial_value=tf.random_normal(shape=[shape[0], output_dimensions], name="Y"))
+    # Y = tf.Variable(initial_value=tf.random_normal(shape=[shape[0], output_dimensions], ), name="Y")
+    Y = tf.Variable(initial_value=tf.random_normal(shape=(shape[0], output_dimensions), dtype=tf.float32), name="Y")
     Q = embedded_probability_matrix(tf.get_default_graph(), Y)
 
     # KL-Divergence between the input probability matrix
     # and the embedded probability matrix
     embedding_loss = kl_divergence(tf.get_default_graph(), P, Q)
-    embedding_optimizer = tf.train.AdagradOptimizer(learning_rate=0.10)
+    embedding_optimizer = tf.train.AdagradOptimizer(learning_rate=0.01)
     embedding_train_ops = embedding_optimizer.minimize(embedding_loss)
 
     # Summary
     beta_hist = tf.histogram_summary("beta", beta)
-    entropy_loss_summary = tf.scalar_summary("l2_loss", entropy_loss)
+    beta_summary = tf.histogram_summary("beta_mean", tf.reduce_mean(beta, reduction_indices=0))
+    entropy_loss_summary = tf.scalar_summary("entropy_difference", entropy_difference)
     embedding_loss_summary = tf.scalar_summary("kl_divergence", embedding_loss)
     merged_summary = tf.merge_all_summaries()
 
@@ -166,10 +167,9 @@ def training(input_data, perplexity, output_dimensions):
         sess.run(tf.initialize_all_variables())
         beta_values = []
         loss_values = []
-
         start_time = time.time()
-        for i in range(125):
-            _, summary_str, loss_value, beta_value = sess.run([entropy_train_ops, merged_summary, entropy_loss, beta], feed_dict={X: input_data})
+        for i in range(200):
+            _, summary_str, loss_value, beta_value = sess.run([entropy_train_ops, merged_summary, entropy_difference, beta], feed_dict={X: input_data})
             beta_values.append(np.sum(beta_value)/len(beta_value))
             loss_values.append(loss_value)
             summary_writer.add_summary(summary_str, i)
@@ -179,7 +179,7 @@ def training(input_data, perplexity, output_dimensions):
                 duration = time.time() - start_time
                 start_time = time.time()
                 print('Epoch %d: (%.3f sec)' % (i, duration))
-                print('L2-Loss')
+                print('L1-Loss')
                 print(loss_value)
                 print('')
                 print('Beta Value')
@@ -204,7 +204,12 @@ def training(input_data, perplexity, output_dimensions):
         for tl in ax2.get_yticklabels():
             tl.set_color('k')
         plt.show()
+
+        # Save at Entropy Checkpoint, useful when optimizing hyperparameters for training
+        # the embedding Y
         saver.save(sess, ENTROPY_CHECKPOINT_PATH)
+
+    print("Using Beta With Mean Value = {}".format(sess.run(tf.reduce_mean(beta))))
 
     kl_divergence_values = []
     start_time = time.time()
@@ -215,9 +220,9 @@ def training(input_data, perplexity, output_dimensions):
     print(sess.run(Q))
     print('')
 
-    for i in range(500):
-        _, summary_str, loss_value, Q_value, Y_value = sess.run(
-            [embedding_train_ops, merged_summary, embedding_loss, Q, Y], feed_dict={X: input_data}
+    for i in range(300):
+        _, summary_str, loss_value, Y_value = sess.run(
+            [embedding_train_ops, merged_summary, embedding_loss, Y], feed_dict={X: input_data}
         )
         summary_writer.add_summary(summary_str, i)
         kl_divergence_values.append(loss_value)
@@ -231,14 +236,12 @@ def training(input_data, perplexity, output_dimensions):
             print('Differential Entropy')
             print(loss_value)
             print('')
-            print('Q')
-            print(Q_value)
-            print('')
             print('Y')
             print(Y_value)
             print('')
 
-    saver.save(sess, KL_DIVERGENCE_CHECKPOINT_PATH)
+    # Save it if you want to visualize the same data again without training
+    # saver.save(sess, KL_DIVERGENCE_CHECKPOINT_PATH)
 
     #Close Summary Writer
     summary_writer.close()
@@ -261,24 +264,14 @@ def training(input_data, perplexity, output_dimensions):
     return Y_value
 
 
-def np_pca(np_matrix, no_dims):
-    """Runs PCA on the NxD array X in order to reduce its dimensionality to no_dims dimensions."""
-
-    print("Preprocessing the data using PCA to reduce input dimensions to %s" % no_dims)
-    (n, d) = np_matrix.shape
-    np_matrix = np_matrix - np.tile(np.mean(np_matrix, 0), (n, 1))
-    (l, M) = np.linalg.eig(np.dot(np_matrix.T, np_matrix))
-    Y = np.dot(np_matrix, M[:,0:no_dims])
-    # Return the real part of the eigen vectors
-    return Y
-
 if __name__ == "__main__":
 
-    input_data = np.loadtxt("mnist2500_X.txt")
-    input_data_dim = np_pca(input_data, 50).real
+    X = np.loadtxt("mnist2500_X.txt")
+    # Set 0 as the mean
+    (n, d) = X.shape
 
     # Calculate the embedding
-    Y_value = training(input_data_dim, perplexity=20.0, output_dimensions=2)
+    Y_value = training(X, perplexity=20.0, output_dimensions=2)
     labels = np.loadtxt("mnist2500_labels.txt")
-    Plot.scatter(Y_value[:,0], Y_value[:,1], 20, labels)
+    Plot.scatter(Y_value[:,0], Y_value[:, 1], 20, labels)
     Plot.show()
